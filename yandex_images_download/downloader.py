@@ -17,20 +17,26 @@ from typing import List, Union, Optional
 from urllib.parse import urlparse, urlencode
 from urllib3.exceptions import SSLError, NewConnectionError
 
-Driver = Union[webdriver.Chrome, webdriver.Edge, 
-               webdriver.Firefox, webdriver.Safari]
+Driver = Union[webdriver.Chrome, webdriver.Edge, webdriver.Firefox, webdriver.Safari]
 
 DRIVER_NAME_TO_CLASS = {
-    'Chrome': webdriver.Chrome,
-    'Edge': webdriver.Edge,
-    'Firefox': webdriver.Firefox,
-    'Safari': webdriver.Safari,
+    "Chrome": webdriver.Chrome,
+    "Edge": webdriver.Edge,
+    "Firefox": webdriver.Firefox,
+    "Safari": webdriver.Safari,
 }  # type: Dict[str, Driver]
 
 
 def get_driver(name: str, path: Optional[str]) -> Driver:
     driver_class = DRIVER_NAME_TO_CLASS[name]
-    args = {'executable_path': path} if path else {}
+    chrome_options = webdriver.ChromeOptions()
+    chrome_options.headless = True
+
+    args = (
+        {"executable_path": path, "chrome_options": chrome_options}
+        if path
+        else {"chrome_options": chrome_options}
+    )
 
     return driver_class(**args)
 
@@ -76,9 +82,7 @@ class DownloaderResult:
 def save_json(args, downloader_result: DownloaderResult):
     downloader_result_json = downloader_result.to_dict()  # pylint: disable=no-member
     json_path = pathlib.Path(args.output_directory) / pathlib.Path(args.json)
-    pretty_json = json.dumps(downloader_result_json,
-                             indent=4,
-                             ensure_ascii=False)
+    pretty_json = json.dumps(downloader_result_json, indent=4, ensure_ascii=False)
     with open(json_path, "w", encoding="utf-8") as f:
         f.write(pretty_json)
     logging.info(f"Result information saved: {json_path}.")
@@ -87,14 +91,15 @@ def save_json(args, downloader_result: DownloaderResult):
 #####
 
 
-def filepath_fix_existing(directory_path: pathlib.Path, name: str,
-                          filepath: pathlib.Path) -> pathlib.Path:
+def filepath_fix_existing(
+    directory_path: pathlib.Path, name: str, filepath: pathlib.Path
+) -> pathlib.Path:
     """Expands name portion of filepath with numeric "(x)" suffix.
     """
     new_filepath = filepath
     if filepath.exists():
         for i in itertools.count(start=1):
-            new_name = f'{name} ({i}){filepath.suffix}'
+            new_name = f"{name} ({i}){filepath.suffix}"
             new_filepath = directory_path / new_name
             if not new_filepath.exists():
                 break
@@ -102,23 +107,34 @@ def filepath_fix_existing(directory_path: pathlib.Path, name: str,
     return new_filepath
 
 
-def download_single_image(img_url: str,
-                          output_directory: pathlib.Path,
-                          sub_directory: str = "",
-                          multiproccess=False) -> ImgUrlResult:
-    img_url_result = ImgUrlResult(status=None,
-                                  message=None,
-                                  img_url=img_url,
-                                  img_path=None)
+def download_single_image(
+    img_url: str,
+    output_directory: pathlib.Path,
+    sub_directory: str = "",
+    multiproccess=False,
+) -> ImgUrlResult:
+    img_url_result = ImgUrlResult(
+        status=None, message=None, img_url=img_url, img_path=None
+    )
 
-    img_extensions = (".jpg", ".jpeg", ".jfif", "jpe", ".gif", ".png", ".bmp",
-                      ".svg", ".webp", ".ico")
+    img_extensions = (
+        ".jpg",
+        ".jpeg",
+        ".jfif",
+        "jpe",
+        ".gif",
+        ".png",
+        ".bmp",
+        ".svg",
+        ".webp",
+        ".ico",
+    )
     content_type_to_ext = {
         "image/gif": ".gif",
         "image/jpeg": ".jpg",
         "image/png": ".png",
         "image/svg+xml": ".svg",
-        "image/x-icon": ".ico"
+        "image/x-icon": ".ico",
     }
 
     try:
@@ -130,7 +146,7 @@ def download_single_image(img_url: str,
         if response.ok:
 
             img_name = pathlib.Path(urlparse(img_url).path).name
-            img_name = img_name[:YandexImagesDownloader.MAXIMUM_FILENAME_LENGTH]
+            img_name = img_name[: YandexImagesDownloader.MAXIMUM_FILENAME_LENGTH]
 
             directory_path = output_directory / sub_directory
             directory_path.mkdir(parents=True, exist_ok=True)
@@ -140,8 +156,7 @@ def download_single_image(img_url: str,
 
             img_path = directory_path / img_name
             if not any(img_path.name.endswith(ext) for ext in img_extensions):
-                img_path = img_path.with_suffix(
-                    content_type_to_ext[content_type])
+                img_path = img_path.with_suffix(content_type_to_ext[content_type])
 
             img_path = filepath_fix_existing(directory_path, img_name, img_path)
             with open(img_path, "wb") as f:
@@ -152,21 +167,23 @@ def download_single_image(img_url: str,
             img_url_result.img_path = str(img_path)
         else:
             img_url_result.status = "fail"
-            img_url_result.message = (f"img_url response is not ok."
-                                      f" response: {response}.")
+            img_url_result.message = (
+                f"img_url response is not ok." f" response: {response}."
+            )
 
     except (KeyboardInterrupt, SystemExit):
         raise
 
-    except (requests.exceptions.SSLError,
-            requests.exceptions.ConnectionError) as e:
+    except (requests.exceptions.SSLError, requests.exceptions.ConnectionError) as e:
         img_url_result.status = "fail"
         img_url_result.message = f"{type(e)}"
 
     except Exception as exception:
         img_url_result.status = "fail"
-        img_url_result.message = (f"Something is wrong here.",
-                                  f" Error: {type(exception), exception}")
+        img_url_result.message = (
+            f"Something is wrong here.",
+            f" Error: {type(exception), exception}",
+        )
 
     if img_url_result.status == "fail":
         logging.info(f"    fail: {img_url} error: {img_url_result.message}")
@@ -179,7 +196,7 @@ def download_single_image(img_url: str,
 #####
 
 
-class YandexImagesDownloader():
+class YandexImagesDownloader:
     """Class to download images from yandex.ru
     """
 
@@ -188,19 +205,21 @@ class YandexImagesDownloader():
     MAXIMUM_IMAGES_PER_PAGE = 30
     MAXIMUM_FILENAME_LENGTH = 50
 
-    def __init__(self,
-                 driver: Driver,
-                 output_directory="download/",
-                 limit=100,
-                 isize=None,
-                 exact_isize=None,
-                 iorient=None,
-                 extension=None,
-                 color=None,
-                 itype=None,
-                 commercial=None,
-                 recent=None,
-                 pool=None):
+    def __init__(
+        self,
+        driver: Driver,
+        output_directory="download/",
+        limit=100,
+        isize=None,
+        exact_isize=None,
+        iorient=None,
+        extension=None,
+        color=None,
+        itype=None,
+        commercial=None,
+        recent=None,
+        pool=None,
+    ):
         self.driver = driver
         self.output_directory = pathlib.Path(output_directory)
         self.limit = limit
@@ -215,9 +234,10 @@ class YandexImagesDownloader():
 
         self.url_params = self.init_url_params()
         self.requests_headers = {
-            'User-Agent':
-                ("Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML,"
-                 " like Gecko) Chrome/41.0.2228.0 Safari/537.36")
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML,"
+                " like Gecko) Chrome/41.0.2228.0 Safari/537.36"
+            )
         }
         self.cookies = {}
         self.pool = pool
@@ -241,7 +261,7 @@ class YandexImagesDownloader():
             "color": self.color,
             "itype": self.itype,
             "commercial": self.commercial,
-            "recent": self.recent
+            "recent": self.recent,
         }
 
         if self.exact_isize:
@@ -258,25 +278,26 @@ class YandexImagesDownloader():
 
         return params
 
-    def download_images_by_page(self, keyword, page, imgs_count,
-                                sub_directory) -> PageResult:
+    def download_images_by_page(
+        self, keyword, page, imgs_count, sub_directory
+    ) -> PageResult:
 
-        page_result = PageResult(status=None,
-                                 message=None,
-                                 page=page,
-                                 errors_count=None,
-                                 img_url_results=[])
+        page_result = PageResult(
+            status=None, message=None, page=page, errors_count=None, img_url_results=[]
+        )
 
-        self.check_captcha_and_get(YandexImagesDownloader.MAIN_URL,
-                                   params=self.get_url_params(page, keyword))
+        self.check_captcha_and_get(
+            YandexImagesDownloader.MAIN_URL, params=self.get_url_params(page, keyword)
+        )
 
         response = self.get_response()
 
         if not (response.reason == "OK"):
             page_result.status = "fail"
-            page_result.message = (f"Page response is not ok."
-                                   f" page: {page},",
-                                   f" status_code: {response.status_code}.")
+            page_result.message = (
+                f"Page response is not ok." f" page: {page},",
+                f" status_code: {response.status_code}.",
+            )
             page_result.errors_count = YandexImagesDownloader.MAXIMUM_IMAGES_PER_PAGE
             return page_result
 
@@ -285,8 +306,7 @@ class YandexImagesDownloader():
         # Getting all image urls from page.
         tag_sepr_item = soup_page.find_all("div", class_="serp-item")
         serp_items = [
-            json.loads(item.attrs["data-bem"])["serp-item"]
-            for item in tag_sepr_item
+            json.loads(item.attrs["data-bem"])["serp-item"] for item in tag_sepr_item
         ]
         img_hrefs = [key["img_href"] for key in serp_items]
 
@@ -298,11 +318,12 @@ class YandexImagesDownloader():
             if self.pool:
                 img_url_result = self.pool.apply_async(
                     download_single_image,
-                    args=(img_url, self.output_directory, sub_directory, True))
+                    args=(img_url, self.output_directory, sub_directory, True),
+                )
             else:
-                img_url_result = download_single_image(img_url,
-                                                       self.output_directory,
-                                                       sub_directory)
+                img_url_result = download_single_image(
+                    img_url, self.output_directory, sub_directory
+                )
 
             page_result.img_url_results.append(img_url_result)
 
@@ -311,8 +332,10 @@ class YandexImagesDownloader():
         if self.pool:
             for i, img_url_result in enumerate(page_result.img_url_results):
                 page_result.img_url_results[i] = img_url_result.get()
-        errors_count += sum(1 if page_result.status == "fail" else 0
-                            for page_result in page_result.img_url_results)
+        errors_count += sum(
+            1 if page_result.status == "fail" else 0
+            for page_result in page_result.img_url_results
+        )
 
         page_result.status = "success"
         page_result.message = f"All successful images from page {page} downloaded."
@@ -320,19 +343,18 @@ class YandexImagesDownloader():
 
         return page_result
 
-    def download_images_by_keyword(self, keyword,
-                                   sub_directory="") -> KeywordResult:
-        keyword_result = KeywordResult(status=None,
-                                       message=None,
-                                       keyword=keyword,
-                                       errors_count=None,
-                                       page_results=[])
+    def download_images_by_keyword(self, keyword, sub_directory="") -> KeywordResult:
+        keyword_result = KeywordResult(
+            status=None,
+            message=None,
+            keyword=keyword,
+            errors_count=None,
+            page_results=[],
+        )
 
-        self.check_captcha_and_get(YandexImagesDownloader.MAIN_URL,
-                                   params={
-                                       'text': keyword,
-                                       "nomisspell": 1
-                                   })
+        self.check_captcha_and_get(
+            YandexImagesDownloader.MAIN_URL, params={"text": keyword, "nomisspell": 1}
+        )
         response = self.get_response()
 
         if not (response.reason == "OK"):
@@ -341,7 +363,8 @@ class YandexImagesDownloader():
                 "Failed to fetch a search page."
                 f" url: {YandexImagesDownloader.MAIN_URL},"
                 f" params: {{'text': {keyword}}},"
-                f" status_code: {response.status_code}")
+                f" status_code: {response.status_code}"
+            )
             return keyword_result
 
         soup = BeautifulSoup(self.driver.page_source, "lxml")
@@ -357,7 +380,8 @@ class YandexImagesDownloader():
         serp_list = json.loads(tag_serp_list.attrs["data-bem"])["serp-list"]
         last_page = serp_list["lastPage"]
         actual_last_page = 1 + floor(
-            self.limit / YandexImagesDownloader.MAXIMUM_IMAGES_PER_PAGE)
+            self.limit / YandexImagesDownloader.MAXIMUM_IMAGES_PER_PAGE
+        )
 
         logging.info(f"  Found {last_page+1} pages of {keyword}.")
 
@@ -374,9 +398,9 @@ class YandexImagesDownloader():
 
             logging.info(f"  Scrapping page {page+1}/{actual_last_page}...")
 
-            page_result = self.download_images_by_page(keyword, page,
-                                                       imgs_count,
-                                                       sub_directory)
+            page_result = self.download_images_by_page(
+                keyword, page, imgs_count, sub_directory
+            )
             keyword_result.page_results.append(page_result)
 
             imgs_count += len(page_result.img_url_results)
@@ -391,9 +415,9 @@ class YandexImagesDownloader():
         return keyword_result
 
     def download_images(self, keywords: List[str]) -> DownloaderResult:
-        dowloader_result = DownloaderResult(status=None,
-                                            message=None,
-                                            keyword_results=[])
+        dowloader_result = DownloaderResult(
+            status=None, message=None, keyword_results=[]
+        )
 
         dowloader_result.status = "fail"
 
@@ -401,7 +425,8 @@ class YandexImagesDownloader():
             logging.info(f"Downloading images for {keyword}...")
 
             keyword_result = self.download_images_by_keyword(
-                keyword, sub_directory=keyword)
+                keyword, sub_directory=keyword
+            )
             dowloader_result.keyword_results.append(keyword_result)
 
             logging.info(keyword_result.message)
@@ -429,8 +454,10 @@ class YandexImagesDownloader():
             if not soup.select(".form__captcha"):
                 break
 
-            logging.warning(f"Please, type the captcha in the browser,"
-                            " then press Enter or type [q] to exit")
+            logging.warning(
+                f"Please, type the captcha in the browser,"
+                " then press Enter or type [q] to exit"
+            )
             reply = input()
             if reply == "q":
                 raise YandexImagesDownloader.StopCaptchaInput()
